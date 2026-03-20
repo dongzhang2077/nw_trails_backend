@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/checkins")
+@Tag(name = "CheckIns")
 public class CheckInController {
 
     private final NwTrailsService nwTrailsService;
@@ -31,17 +32,15 @@ public class CheckInController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CheckInResultResponse createCheckIn(
-        Authentication authentication,
-        @Valid @RequestBody CreateCheckInRequest request
-    ) {
+            Authentication authentication,
+            @Valid @RequestBody CreateCheckInRequest request) {
         return nwTrailsService.createCheckIn(authentication.getName(), request);
     }
 
     @GetMapping
     public Map<String, List<CheckInRecord>> listMyCheckIns(
-        Authentication authentication,
-        @RequestParam(defaultValue = "ALL") CheckInPeriod period
-    ) {
+            Authentication authentication,
+            @RequestParam(defaultValue = "ALL") CheckInPeriod period) {
         return Map.of("items", nwTrailsService.listCheckIns(authentication.getName(), period));
     }
 }
