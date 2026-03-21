@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -42,6 +43,19 @@ public class ApiExceptionHandler {
                     "VALIDATION_ERROR",
                     "Request validation failed.",
                     Map.of("constraintErrors", exception.getMessage())
+                )
+            );
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ErrorResponse> handleMalformedJson(HttpMessageNotReadableException exception) {
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(
+                new ErrorResponse(
+                    "VALIDATION_ERROR",
+                    "Malformed JSON request body.",
+                    Map.of("parseError", exception.getMostSpecificCause().getMessage())
                 )
             );
     }
