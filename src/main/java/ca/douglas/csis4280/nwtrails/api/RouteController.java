@@ -5,6 +5,7 @@ import ca.douglas.csis4280.nwtrails.api.dto.RouteProgressResponse;
 import ca.douglas.csis4280.nwtrails.api.dto.UpdateRouteRequest;
 import ca.douglas.csis4280.nwtrails.domain.RoutePlan;
 import ca.douglas.csis4280.nwtrails.service.NwTrailsService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;

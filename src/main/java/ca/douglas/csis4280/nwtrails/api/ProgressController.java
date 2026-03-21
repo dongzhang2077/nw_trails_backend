@@ -2,6 +2,8 @@ package ca.douglas.csis4280.nwtrails.api;
 
 import ca.douglas.csis4280.nwtrails.api.dto.UserProgressResponse;
 import ca.douglas.csis4280.nwtrails.service.NwTrailsService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

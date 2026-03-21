@@ -2,10 +2,11 @@ package ca.douglas.csis4280.nwtrails.api;
 
 import ca.douglas.csis4280.nwtrails.api.dto.CreateLandmarkRequest;
 import ca.douglas.csis4280.nwtrails.api.dto.UpdateLandmarkRequest;
+import ca.douglas.csis4280.nwtrails.common.ApiException;
 import ca.douglas.csis4280.nwtrails.domain.Landmark;
 import ca.douglas.csis4280.nwtrails.domain.LandmarkCategory;
 import ca.douglas.csis4280.nwtrails.repository.LandmarkRepository;
-import ca.douglas.csis4280.nwtrails.service.NwTrailsService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -26,11 +27,9 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Landmarks")
 public class LandmarkController {
 
-    private final NwTrailsService nwTrailsService;
     private final LandmarkRepository landmarkRepository;
 
-    public LandmarkController(NwTrailsService nwTrailsService, LandmarkRepository landmarkRepository) {
-        this.nwTrailsService = nwTrailsService;
+    public LandmarkController(LandmarkRepository landmarkRepository) {
         this.landmarkRepository = landmarkRepository;
     }
 
@@ -52,7 +51,8 @@ public class LandmarkController {
 
     @GetMapping("/landmarks/{landmarkId}")
     public Landmark getLandmarkById(@PathVariable String landmarkId) {
-        return landmarkRepository.findById(landmarkId).orElse(null);
+        return landmarkRepository.findById(landmarkId)
+            .orElseThrow(() -> landmarkNotFound(landmarkId));
     }
 
     @PostMapping("/admin/landmarks")
@@ -75,7 +75,7 @@ public class LandmarkController {
             @PathVariable String landmarkId,
             @Valid @RequestBody UpdateLandmarkRequest request) {
         Landmark existing = landmarkRepository.findById(landmarkId)
-                .orElseThrow(() -> new RuntimeException("Landmark not found: " + landmarkId));
+            .orElseThrow(() -> landmarkNotFound(landmarkId));
         return landmarkRepository.save(new Landmark(
                 existing.id(),
                 request.name(),
@@ -91,6 +91,17 @@ public class LandmarkController {
     @DeleteMapping("/admin/landmarks/{landmarkId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteLandmark(@PathVariable String landmarkId) {
+        if (!landmarkRepository.existsById(landmarkId)) {
+            throw landmarkNotFound(landmarkId);
+        }
         landmarkRepository.deleteById(landmarkId);
+    }
+
+    private ApiException landmarkNotFound(String landmarkId) {
+        return new ApiException(
+            HttpStatus.NOT_FOUND,
+            "NOT_FOUND",
+            "Landmark not found: " + landmarkId
+        );
     }
 }

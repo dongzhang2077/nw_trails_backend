@@ -5,6 +5,8 @@ import ca.douglas.csis4280.nwtrails.api.dto.CreateCheckInRequest;
 import ca.douglas.csis4280.nwtrails.domain.CheckInPeriod;
 import ca.douglas.csis4280.nwtrails.domain.CheckInRecord;
 import ca.douglas.csis4280.nwtrails.service.NwTrailsService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;

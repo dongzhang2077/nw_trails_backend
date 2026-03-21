@@ -4,10 +4,8 @@ import ca.douglas.csis4280.nwtrails.api.dto.BadgeProgressResponse;
 import ca.douglas.csis4280.nwtrails.api.dto.CategoryProgressResponse;
 import ca.douglas.csis4280.nwtrails.api.dto.CheckInResultResponse;
 import ca.douglas.csis4280.nwtrails.api.dto.CreateCheckInRequest;
-import ca.douglas.csis4280.nwtrails.api.dto.CreateLandmarkRequest;
 import ca.douglas.csis4280.nwtrails.api.dto.CreateRouteRequest;
 import ca.douglas.csis4280.nwtrails.api.dto.RouteProgressResponse;
-import ca.douglas.csis4280.nwtrails.api.dto.UpdateLandmarkRequest;
 import ca.douglas.csis4280.nwtrails.api.dto.UpdateRouteRequest;
 import ca.douglas.csis4280.nwtrails.api.dto.UserProgressResponse;
 import ca.douglas.csis4280.nwtrails.common.ApiException;
@@ -25,7 +23,6 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,23 +41,18 @@ public class NwTrailsService {
 
     private static final int CHECK_IN_MAX_DISTANCE_METERS = 50;
 
-    private final Map<String, Landmark> landmarks = new LinkedHashMap<>();
     private final Map<String, RoutePlan> routes = new LinkedHashMap<>();
 
     private final Map<String, List<CheckInRecord>> checkInsByUser = new ConcurrentHashMap<>();
     private final Map<String, String> activeRouteIdByUser = new ConcurrentHashMap<>();
 
     private final AtomicLong checkInIdSequence = new AtomicLong(1);
-    private final AtomicLong landmarkIdSequence = new AtomicLong(100);
     private final AtomicLong routeIdSequence = new AtomicLong(100);
 
     public NwTrailsService(LandmarkRepository landmarkRepository) {
         this.landmarkRepository = landmarkRepository;
-        landmarkRepository.findAll().forEach(landmark -> landmarks.put(landmark.id(), landmark));
         seedRoutes();
-
     }
-
 
     public synchronized List<RoutePlan> listRoutes(@Nullable String difficulty) {
         if (difficulty == null || difficulty.isBlank()) {
@@ -229,7 +221,7 @@ public class NwTrailsService {
             visitedByCategory.put(category, 0);
         }
 
-        for (Landmark landmark : landmarks.values()) {
+        for (Landmark landmark : landmarkRepository.findAll()) {
             totalByCategory.computeIfPresent(landmark.category(), (k, v) -> v + 1);
             if (visitedIds.contains(landmark.id())) {
                 visitedByCategory.computeIfPresent(landmark.category(), (k, v) -> v + 1);
@@ -274,7 +266,7 @@ public class NwTrailsService {
 
     private BadgeProgressResponse computeBadgeProgress(String username) {
         int visitedCount = visitedLandmarkIds(username).size();
-        int totalLandmarks = landmarks.size();
+        int totalLandmarks = Math.toIntExact(landmarkRepository.count());
 
         boolean bronze = visitedCount >= 5;
         boolean silver = visitedCount >= 10;
@@ -369,14 +361,20 @@ public class NwTrailsService {
     }
 
     private String landmarkNameById(String landmarkId) {
-        Landmark landmark = landmarks.get(landmarkId);
-        return landmark == null ? landmarkId : landmark.name();
+        return landmarkRepository.findById(landmarkId)
+            .map(Landmark::name)
+            .orElse(landmarkId);
     }
 
     private void validateRouteLandmarkIds(List<String> landmarkIds) {
+        Set<String> existingLandmarkIds = new LinkedHashSet<>();
+        landmarkRepository.findAllById(landmarkIds)
+            .forEach(landmark -> existingLandmarkIds.add(landmark.id()));
+
         List<String> invalidIds = landmarkIds
             .stream()
-            .filter(id -> !landmarks.containsKey(id))
+            .filter(id -> !existingLandmarkIds.contains(id))
+            .distinct()
             .toList();
         if (!invalidIds.isEmpty()) {
             throw new ApiException(
