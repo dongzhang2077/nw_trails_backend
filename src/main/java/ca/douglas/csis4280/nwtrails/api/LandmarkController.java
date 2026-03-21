@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "Landmarks")
 public class LandmarkController {
 
     private final NwTrailsService nwTrailsService;
@@ -35,9 +36,8 @@ public class LandmarkController {
 
     @GetMapping("/landmarks")
     public Map<String, List<Landmark>> listLandmarks(
-        @RequestParam(required = false) LandmarkCategory category,
-        @RequestParam(required = false, name = "q") String query
-    ) {
+            @RequestParam(required = false) LandmarkCategory category,
+            @RequestParam(required = false, name = "q") String query) {
         List<Landmark> results;
         if (category != null && query != null)
             results = landmarkRepository.findByCategoryAndNameContainingIgnoreCase(category, query);
@@ -59,36 +59,33 @@ public class LandmarkController {
     @ResponseStatus(HttpStatus.CREATED)
     public Landmark createLandmark(@Valid @RequestBody CreateLandmarkRequest request) {
         return landmarkRepository.save(new Landmark(
-            null,
-            request.name(),
-            request.category(),
-            request.address(),
-            request.description(),
-            request.latitude(),
-            request.longitude(),
-            request.imageUrl(),
-            request.rating()
-        ));
+                null,
+                request.name(),
+                request.category(),
+                request.address(),
+                request.description(),
+                request.latitude(),
+                request.longitude(),
+                request.imageUrl(),
+                request.rating()));
     }
 
     @PutMapping("/admin/landmarks/{landmarkId}")
     public Landmark updateLandmark(
-        @PathVariable String landmarkId,
-        @Valid @RequestBody UpdateLandmarkRequest request
-    ) {
+            @PathVariable String landmarkId,
+            @Valid @RequestBody UpdateLandmarkRequest request) {
         Landmark existing = landmarkRepository.findById(landmarkId)
-            .orElseThrow(() -> new RuntimeException("Landmark not found: " + landmarkId));
+                .orElseThrow(() -> new RuntimeException("Landmark not found: " + landmarkId));
         return landmarkRepository.save(new Landmark(
-            existing.id(),
-            request.name(),
-            request.category(),
-            request.address(),
-            request.description(),
-            request.latitude(),
-            request.longitude(),
-            request.imageUrl(),
-            request.rating()
-        ));
+                existing.id(),
+                request.name(),
+                request.category(),
+                request.address(),
+                request.description(),
+                request.latitude(),
+                request.longitude(),
+                request.imageUrl(),
+                request.rating()));
     }
 
     @DeleteMapping("/admin/landmarks/{landmarkId}")
