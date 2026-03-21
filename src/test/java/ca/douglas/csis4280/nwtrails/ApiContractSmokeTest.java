@@ -42,7 +42,7 @@ class ApiContractSmokeTest {
 
     @Test
     void checkinReturnsOutOfRangeWhenCoordinatesAreFarAway() throws Exception {
-        String token = loginAndGetAccessToken("student01", "Passw0rd!");
+        String token = loginAndGetAccessToken("admin01", "AdminPass!");
 
         mockMvc
             .perform(
@@ -61,6 +61,58 @@ class ApiContractSmokeTest {
             )
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.code").value("OUT_OF_RANGE"));
+    }
+
+    @Test
+    void checkinReturnsConflictWhenDuplicateOnSameDay() throws Exception {
+        String token = loginAndGetAccessToken("student01", "Passw0rd!");
+
+        String validCheckInBody =
+            """
+            {
+              "landmarkId": "l1",
+              "latitude": 49.2064,
+              "longitude": -122.9094
+            }
+            """;
+
+        mockMvc
+            .perform(
+                post("/api/v1/checkins")
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(validCheckInBody)
+            )
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("SUCCESS"));
+
+        mockMvc
+            .perform(
+                post("/api/v1/checkins")
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(validCheckInBody)
+            )
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("DUPLICATE_CHECKIN"));
+    }
+
+    @Test
+    void startRouteAndProgressMeExposeActiveRouteProgress() throws Exception {
+        String token = loginAndGetAccessToken("student01", "Passw0rd!");
+
+        mockMvc
+            .perform(post("/api/v1/routes/r1/start").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.routeId").value("r1"))
+            .andExpect(jsonPath("$.completed").value(false));
+
+        mockMvc
+            .perform(get("/api/v1/progress/me").header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.badgeProgress").exists())
+            .andExpect(jsonPath("$.categoryProgress").isArray())
+            .andExpect(jsonPath("$.activeRoute.routeId").value("r1"));
     }
 
     private String loginAndGetAccessToken(String username, String password) throws Exception {

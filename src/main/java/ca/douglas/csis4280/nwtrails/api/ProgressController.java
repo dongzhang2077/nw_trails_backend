@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/progress")
+@Tag(name = "Progress")
 public class ProgressController {
 
     private final NwTrailsService nwTrailsService;
@@ -18,6 +19,7 @@ public class ProgressController {
     }
 
     @GetMapping("/me")
+    @Operation(summary = "Get badge and route progress for current user")
     public UserProgressResponse getMyProgress(Authentication authentication) {
         return nwTrailsService.getProgress(authentication.getName());
     }

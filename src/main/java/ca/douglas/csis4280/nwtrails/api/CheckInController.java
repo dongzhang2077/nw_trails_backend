@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/checkins")
+@Tag(name = "CheckIns")
 public class CheckInController {
 
     private final NwTrailsService nwTrailsService;
@@ -30,18 +31,21 @@ public class CheckInController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Create check-in for a landmark", description = """
+            Business rules:
+            - Same user cannot check in to same landmark more than once per day.
+            - User must be within 50 meters of the landmark.
+            """)
     public CheckInResultResponse createCheckIn(
-        Authentication authentication,
-        @Valid @RequestBody CreateCheckInRequest request
-    ) {
+            Authentication authentication,
+            @Valid @RequestBody CreateCheckInRequest request) {
         return nwTrailsService.createCheckIn(authentication.getName(), request);
     }
 
     @GetMapping
     public Map<String, List<CheckInRecord>> listMyCheckIns(
-        Authentication authentication,
-        @RequestParam(defaultValue = "ALL") CheckInPeriod period
-    ) {
+            Authentication authentication,
+            @RequestParam(defaultValue = "ALL") CheckInPeriod period) {
         return Map.of("items", nwTrailsService.listCheckIns(authentication.getName(), period));
     }
 }

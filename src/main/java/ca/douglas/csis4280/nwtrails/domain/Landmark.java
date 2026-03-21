@@ -1,7 +1,11 @@
 package ca.douglas.csis4280.nwtrails.domain;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+@Document(collection = "landmarks")
 public record Landmark(
-    String id,
+    @Id String id,
     String name,
     LandmarkCategory category,
     String address,

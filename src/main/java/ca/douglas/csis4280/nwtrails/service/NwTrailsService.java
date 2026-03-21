@@ -31,12 +31,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import ca.douglas.csis4280.nwtrails.repository.LandmarkRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
 public class NwTrailsService {
+
+    private final LandmarkRepository landmarkRepository;
 
     private static final int CHECK_IN_MAX_DISTANCE_METERS = 50;
 
@@ -50,82 +54,13 @@ public class NwTrailsService {
     private final AtomicLong landmarkIdSequence = new AtomicLong(100);
     private final AtomicLong routeIdSequence = new AtomicLong(100);
 
-    public NwTrailsService() {
-        seedLandmarks();
+    public NwTrailsService(LandmarkRepository landmarkRepository) {
+        this.landmarkRepository = landmarkRepository;
+        landmarkRepository.findAll().forEach(landmark -> landmarks.put(landmark.id(), landmark));
         seedRoutes();
+
     }
 
-    public synchronized List<Landmark> listLandmarks(
-        @Nullable LandmarkCategory category,
-        @Nullable String query
-    ) {
-        String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
-
-        return landmarks
-            .values()
-            .stream()
-            .filter(landmark -> category == null || landmark.category() == category)
-            .filter(landmark -> {
-                if (normalizedQuery.isBlank()) {
-                    return true;
-                }
-                String content = (landmark.name() + " " + landmark.address()).toLowerCase(Locale.ROOT);
-                return content.contains(normalizedQuery);
-            })
-            .toList();
-    }
-
-    public synchronized Landmark getLandmarkById(String landmarkId) {
-        Landmark landmark = landmarks.get(landmarkId);
-        if (landmark == null) {
-            throw notFound("Landmark not found: " + landmarkId);
-        }
-        return landmark;
-    }
-
-    public synchronized Landmark createLandmark(CreateLandmarkRequest request) {
-        String id = "l" + landmarkIdSequence.getAndIncrement();
-        Landmark landmark = new Landmark(
-            id,
-            request.name(),
-            request.category(),
-            request.address(),
-            request.description(),
-            request.latitude(),
-            request.longitude(),
-            request.imageUrl(),
-            request.rating()
-        );
-        landmarks.put(id, landmark);
-        return landmark;
-    }
-
-    public synchronized Landmark updateLandmark(String landmarkId, UpdateLandmarkRequest request) {
-        if (!landmarks.containsKey(landmarkId)) {
-            throw notFound("Landmark not found: " + landmarkId);
-        }
-
-        Landmark updated = new Landmark(
-            landmarkId,
-            request.name(),
-            request.category(),
-            request.address(),
-            request.description(),
-            request.latitude(),
-            request.longitude(),
-            request.imageUrl(),
-            request.rating()
-        );
-        landmarks.put(landmarkId, updated);
-        return updated;
-    }
-
-    public synchronized void deleteLandmark(String landmarkId) {
-        Landmark removed = landmarks.remove(landmarkId);
-        if (removed == null) {
-            throw notFound("Landmark not found: " + landmarkId);
-        }
-    }
 
     public synchronized List<RoutePlan> listRoutes(@Nullable String difficulty) {
         if (difficulty == null || difficulty.isBlank()) {
@@ -196,7 +131,9 @@ public class NwTrailsService {
         String username,
         CreateCheckInRequest request
     ) {
-        Landmark targetLandmark = getLandmarkById(request.landmarkId());
+        Landmark targetLandmark = landmarkRepository.findById(request.landmarkId())
+        .orElseThrow(() -> notFound("Landmark not found: " + request.landmarkId()));
+
         List<CheckInRecord> userRecords = recordsForUser(username);
 
         LocalDate today = LocalDate.now();
@@ -487,207 +424,6 @@ public class NwTrailsService {
         return (int) Math.round(earthRadiusMeters * c);
     }
 
-    private void seedLandmarks() {
-        putLandmark(
-            new Landmark(
-                "l1",
-                "Irving House",
-                LandmarkCategory.historic,
-                "302 Royal Ave",
-                "A preserved 19th century home museum.",
-                49.2064,
-                -122.9094,
-                "https://picsum.photos/seed/nw-l1/1200/700",
-                4.7
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l2",
-                "New Westminster Museum",
-                LandmarkCategory.historic,
-                "777 Columbia St",
-                "Local history exhibitions and archives.",
-                49.2060,
-                -122.9079,
-                "https://picsum.photos/seed/nw-l2/1200/700",
-                4.5
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l3",
-                "City Hall",
-                LandmarkCategory.historic,
-                "511 Royal Ave",
-                "Historic municipal building in downtown core.",
-                49.2070,
-                -122.9119,
-                "https://picsum.photos/seed/nw-l3/1200/700",
-                4.3
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l4",
-                "Westminster Pier Park",
-                LandmarkCategory.historic,
-                "1 Sixth St",
-                "Riverfront park with boardwalk views.",
-                49.2046,
-                -122.9119,
-                "https://picsum.photos/seed/nw-l4/1200/700",
-                4.8
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l5",
-                "Queens Park",
-                LandmarkCategory.nature,
-                "First St",
-                "Large urban park with open lawns and trails.",
-                49.2120,
-                -122.9056,
-                "https://picsum.photos/seed/nw-l5/1200/700",
-                4.9
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l6",
-                "Fraser River Trail",
-                LandmarkCategory.nature,
-                "Fraser River Waterfront",
-                "Scenic walk route along the river.",
-                49.2043,
-                -122.9110,
-                "https://picsum.photos/seed/nw-l6/1200/700",
-                4.6
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l7",
-                "Hume Park",
-                LandmarkCategory.nature,
-                "660 East Columbia St",
-                "Forest-style city park and recreation space.",
-                49.2067,
-                -122.8963,
-                "https://picsum.photos/seed/nw-l7/1200/700",
-                4.4
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l8",
-                "Tipperary Park",
-                LandmarkCategory.nature,
-                "315 Queens Ave",
-                "Small downtown park near civic landmarks.",
-                49.2076,
-                -122.9099,
-                "https://picsum.photos/seed/nw-l8/1200/700",
-                4.2
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l9",
-                "River Market",
-                LandmarkCategory.food,
-                "810 Quayside Dr",
-                "Popular food market by the waterfront.",
-                49.2028,
-                -122.9121,
-                "https://picsum.photos/seed/nw-l9/1200/700",
-                4.7
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l10",
-                "Columbia Street Cafes",
-                LandmarkCategory.food,
-                "Columbia St",
-                "Coffee shops and local student hangouts.",
-                49.2060,
-                -122.9090,
-                "https://picsum.photos/seed/nw-l10/1200/700",
-                4.1
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l11",
-                "Steel and Oak Brewing",
-                LandmarkCategory.food,
-                "1319 Third Ave",
-                "Local craft brewery with tasting room.",
-                49.2093,
-                -122.9020,
-                "https://picsum.photos/seed/nw-l11/1200/700",
-                4.6
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l12",
-                "Anvil Centre",
-                LandmarkCategory.culture,
-                "777 Columbia St",
-                "Arts and culture venue with public events.",
-                49.2058,
-                -122.9079,
-                "https://picsum.photos/seed/nw-l12/1200/700",
-                4.5
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l13",
-                "Massey Theatre",
-                LandmarkCategory.culture,
-                "735 Eighth Ave",
-                "Performance venue for concerts and shows.",
-                49.2124,
-                -122.9054,
-                "https://picsum.photos/seed/nw-l13/1200/700",
-                4.4
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l14",
-                "Douglas College New West",
-                LandmarkCategory.culture,
-                "700 Royal Ave",
-                "Campus hub for Douglas College students.",
-                49.2071,
-                -122.9115,
-                "https://picsum.photos/seed/nw-l14/1200/700",
-                4.0
-            )
-        );
-        putLandmark(
-            new Landmark(
-                "l15",
-                "Samson V Maritime Museum",
-                LandmarkCategory.culture,
-                "Gallery at Quayside",
-                "Historic paddlewheeler ship museum exhibit.",
-                49.2030,
-                -122.9100,
-                "https://picsum.photos/seed/nw-l15/1200/700",
-                4.3
-            )
-        );
-    }
-
-    private void putLandmark(Landmark landmark) {
-        landmarks.put(landmark.id(), landmark);
-    }
 
     private void seedRoutes() {
         routes.put(
