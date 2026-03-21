@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "Routes")
 public class RouteController {
 
     private final NwTrailsService nwTrailsService;
@@ -33,8 +34,7 @@ public class RouteController {
 
     @GetMapping("/routes")
     public Map<String, List<RoutePlan>> listRoutes(
-        @RequestParam(required = false) String difficulty
-    ) {
+            @RequestParam(required = false) String difficulty) {
         return Map.of("items", nwTrailsService.listRoutes(difficulty));
     }
 
@@ -45,9 +45,8 @@ public class RouteController {
 
     @PostMapping("/routes/{routeId}/start")
     public RouteProgressResponse startRoute(
-        Authentication authentication,
-        @PathVariable String routeId
-    ) {
+            Authentication authentication,
+            @PathVariable String routeId) {
         return nwTrailsService.startRoute(authentication.getName(), routeId);
     }
 
@@ -59,9 +58,8 @@ public class RouteController {
 
     @PutMapping("/admin/routes/{routeId}")
     public RoutePlan updateRoute(
-        @PathVariable String routeId,
-        @Valid @RequestBody UpdateRouteRequest request
-    ) {
+            @PathVariable String routeId,
+            @Valid @RequestBody UpdateRouteRequest request) {
         return nwTrailsService.updateRoute(routeId, request);
     }
 
