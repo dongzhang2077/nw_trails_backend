@@ -4,6 +4,7 @@ import ca.douglas.csis4280.nwtrails.api.dto.AuthTokenResponse;
 import ca.douglas.csis4280.nwtrails.api.dto.LoginRequest;
 import ca.douglas.csis4280.nwtrails.api.dto.RefreshTokenRequest;
 import ca.douglas.csis4280.nwtrails.service.AuthService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
