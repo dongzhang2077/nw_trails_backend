@@ -4,12 +4,14 @@ import ca.douglas.csis4280.nwtrails.api.dto.AuthTokenResponse;
 import ca.douglas.csis4280.nwtrails.api.dto.UserSummaryResponse;
 import ca.douglas.csis4280.nwtrails.common.ApiException;
 import ca.douglas.csis4280.nwtrails.config.JwtProperties;
+import ca.douglas.csis4280.nwtrails.domain.UserAccount;
+import ca.douglas.csis4280.nwtrails.repository.UserAccountRepository;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -22,30 +24,27 @@ public class AuthService {
 
     private final JwtEncoder jwtEncoder;
     private final JwtProperties jwtProperties;
-    private final Map<String, UserAccount> usersByUsername = Map.of(
-        "student01",
-        new UserAccount("u01", "student01", "Passw0rd!", "Dong Zhang", List.of("USER")),
-        "admin01",
-        new UserAccount(
-            "u99",
-            "admin01",
-            "AdminPass!",
-            "Group06 Admin",
-            List.of("USER", "ADMIN")
-        )
-    );
+    private final UserAccountRepository userAccountRepository;
+    private final PasswordEncoder passwordEncoder;
 
     private final Map<String, RefreshTokenState> refreshTokenStore =
         new ConcurrentHashMap<>();
 
-    public AuthService(JwtEncoder jwtEncoder, JwtProperties jwtProperties) {
+    public AuthService(
+        JwtEncoder jwtEncoder,
+        JwtProperties jwtProperties,
+        UserAccountRepository userAccountRepository,
+        PasswordEncoder passwordEncoder
+    ) {
         this.jwtEncoder = jwtEncoder;
         this.jwtProperties = jwtProperties;
+        this.userAccountRepository = userAccountRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public AuthTokenResponse login(String username, String password) {
-        UserAccount user = usersByUsername.get(username);
-        if (user == null || !user.password().equals(password)) {
+        UserAccount user = findEnabledUser(username);
+        if (!passwordEncoder.matches(password, user.passwordHash())) {
             throw new ApiException(
                 HttpStatus.UNAUTHORIZED,
                 "UNAUTHORIZED",
@@ -66,17 +65,30 @@ public class AuthService {
             );
         }
 
-        UserAccount user = usersByUsername.get(state.username());
-        if (user == null) {
-            throw new ApiException(
-                HttpStatus.UNAUTHORIZED,
-                "UNAUTHORIZED",
-                "User account is unavailable."
-            );
-        }
+        UserAccount user = findEnabledUser(state.username());
 
         refreshTokenStore.remove(refreshToken);
         return issueTokenPair(user);
+    }
+
+    public UserSummaryResponse me(String username) {
+        UserAccount user = findEnabledUser(username);
+        return toUserSummary(user);
+    }
+
+    public void logout(String username, String refreshToken) {
+        RefreshTokenState state = refreshTokenStore.get(refreshToken);
+        if (state == null) {
+            return;
+        }
+        if (!state.username().equals(username)) {
+            throw new ApiException(
+                HttpStatus.FORBIDDEN,
+                "FORBIDDEN",
+                "Refresh token does not belong to the current user."
+            );
+        }
+        refreshTokenStore.remove(refreshToken);
     }
 
     private AuthTokenResponse issueTokenPair(UserAccount user) {
@@ -93,8 +105,38 @@ public class AuthService {
             refreshToken,
             "Bearer",
             jwtProperties.getAccessTokenSeconds(),
-            new UserSummaryResponse(user.userId(), user.username(), user.displayName(), user.roles())
+            toUserSummary(user)
         );
+    }
+
+    private UserSummaryResponse toUserSummary(UserAccount user) {
+        return new UserSummaryResponse(
+            user.id(),
+            user.username(),
+            user.displayName(),
+            user.roles()
+        );
+    }
+
+    private UserAccount findEnabledUser(String username) {
+        UserAccount user = userAccountRepository
+            .findByUsername(username)
+            .orElseThrow(() ->
+                new ApiException(
+                    HttpStatus.UNAUTHORIZED,
+                    "UNAUTHORIZED",
+                    "Invalid username or password."
+                )
+            );
+
+        if (!user.enabled()) {
+            throw new ApiException(
+                HttpStatus.UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "User account is disabled."
+            );
+        }
+        return user;
     }
 
     private String buildAccessToken(UserAccount user, Instant issuedAt, Instant expiresAt) {
@@ -104,7 +146,7 @@ public class AuthService {
             .issuedAt(issuedAt)
             .expiresAt(expiresAt)
             .subject(user.username())
-            .claim("uid", user.userId())
+            .claim("uid", user.id())
             .claim("displayName", user.displayName())
             .claim("roles", user.roles())
             .build();
@@ -116,12 +158,4 @@ public class AuthService {
     }
 
     private record RefreshTokenState(String username, Instant expiresAt) {}
-
-    private record UserAccount(
-        String userId,
-        String username,
-        String password,
-        String displayName,
-        List<String> roles
-    ) {}
 }
