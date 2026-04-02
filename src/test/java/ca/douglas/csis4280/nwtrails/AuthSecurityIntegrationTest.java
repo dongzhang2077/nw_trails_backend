@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import ca.douglas.csis4280.nwtrails.repository.LandmarkRepository;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -52,6 +53,57 @@ class AuthSecurityIntegrationTest {
             .andExpect(jsonPath("$.accessToken").isNotEmpty())
             .andExpect(jsonPath("$.refreshToken").isNotEmpty())
             .andExpect(jsonPath("$.tokenType").value("Bearer"));
+    }
+
+    @Test
+    void meReturnsCurrentUserForValidToken() throws Exception {
+        String accessToken = login("student01", "Passw0rd!").get("accessToken").asText();
+
+        mockMvc
+            .perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + accessToken))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.username").value("student01"))
+            .andExpect(jsonPath("$.displayName").isNotEmpty())
+            .andExpect(jsonPath("$.roles").isArray());
+    }
+
+    @Test
+    void logoutRevokesRefreshTokenForCurrentUser() throws Exception {
+        JsonNode loginBody = login("student01", "Passw0rd!");
+        String accessToken = loginBody.get("accessToken").asText();
+        String refreshToken = loginBody.get("refreshToken").asText();
+
+        mockMvc
+            .perform(
+                post("/api/v1/auth/logout")
+                    .header("Authorization", "Bearer " + accessToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "refreshToken": "%s"
+                        }
+                        """
+                            .formatted(refreshToken)
+                    )
+            )
+            .andExpect(status().isNoContent());
+
+        mockMvc
+            .perform(
+                post("/api/v1/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "refreshToken": "%s"
+                        }
+                        """
+                            .formatted(refreshToken)
+                    )
+            )
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
     @Test

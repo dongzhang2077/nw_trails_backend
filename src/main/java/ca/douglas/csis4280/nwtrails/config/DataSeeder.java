@@ -2,18 +2,29 @@ package ca.douglas.csis4280.nwtrails.config;
 
 import ca.douglas.csis4280.nwtrails.domain.Landmark;
 import ca.douglas.csis4280.nwtrails.domain.LandmarkCategory;
+import ca.douglas.csis4280.nwtrails.domain.UserAccount;
 import ca.douglas.csis4280.nwtrails.repository.LandmarkRepository;
+import ca.douglas.csis4280.nwtrails.repository.UserAccountRepository;
 import java.util.List;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 @Component
 public class DataSeeder implements CommandLineRunner {
 
     private final LandmarkRepository landmarkRepository;
+    private final UserAccountRepository userAccountRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public DataSeeder(LandmarkRepository landmarkRepository) {
+    public DataSeeder(
+        LandmarkRepository landmarkRepository,
+        UserAccountRepository userAccountRepository,
+        PasswordEncoder passwordEncoder
+    ) {
         this.landmarkRepository = landmarkRepository;
+        this.userAccountRepository = userAccountRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
@@ -21,6 +32,31 @@ public class DataSeeder implements CommandLineRunner {
         if (landmarkRepository.count() == 0) {
             landmarkRepository.saveAll(seedLandmarks());
         }
+
+        if (userAccountRepository.count() == 0) {
+            userAccountRepository.saveAll(seedUsers());
+        }
+    }
+
+    private List<UserAccount> seedUsers() {
+        return List.of(
+            new UserAccount(
+                "u01",
+                "student01",
+                passwordEncoder.encode("Passw0rd!"),
+                "Dong Zhang",
+                List.of("USER"),
+                true
+            ),
+            new UserAccount(
+                "u99",
+                "admin01",
+                passwordEncoder.encode("AdminPass!"),
+                "Group06 Admin",
+                List.of("USER", "ADMIN"),
+                true
+            )
+        );
     }
 
     private List<Landmark> seedLandmarks() {
