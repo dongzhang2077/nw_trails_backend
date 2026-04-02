@@ -14,6 +14,11 @@ import ca.douglas.csis4280.nwtrails.domain.CheckInRecord;
 import ca.douglas.csis4280.nwtrails.domain.Landmark;
 import ca.douglas.csis4280.nwtrails.domain.LandmarkCategory;
 import ca.douglas.csis4280.nwtrails.domain.RoutePlan;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -25,14 +30,18 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import ca.douglas.csis4280.nwtrails.repository.LandmarkRepository;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class NwTrailsService {
@@ -40,17 +49,29 @@ public class NwTrailsService {
     private final LandmarkRepository landmarkRepository;
 
     private static final int CHECK_IN_MAX_DISTANCE_METERS = 50;
+    private static final int CHECK_IN_MAX_PHOTOS = 9;
+    private static final long CHECK_IN_PHOTO_MAX_BYTES = 5L * 1024 * 1024;
+    private static final Set<String> ALLOWED_PHOTO_EXTENSIONS = Set.of(
+        "jpg",
+        "jpeg",
+        "png",
+        "webp"
+    );
+    private static final String PHOTO_URL_PREFIX = "/checkins/photos/";
 
     private final Map<String, RoutePlan> routes = new LinkedHashMap<>();
 
     private final Map<String, List<CheckInRecord>> checkInsByUser = new ConcurrentHashMap<>();
     private final Map<String, String> activeRouteIdByUser = new ConcurrentHashMap<>();
+    private final Map<String, StoredCheckInPhoto> checkInPhotosById = new ConcurrentHashMap<>();
+    private final Path checkInPhotoStorageRoot = Path.of("storage", "checkin-photos");
 
     private final AtomicLong checkInIdSequence = new AtomicLong(1);
     private final AtomicLong routeIdSequence = new AtomicLong(100);
 
     public NwTrailsService(LandmarkRepository landmarkRepository) {
         this.landmarkRepository = landmarkRepository;
+        initializeCheckInPhotoStorage();
         seedRoutes();
     }
 
@@ -119,6 +140,69 @@ public class NwTrailsService {
         return computeRouteProgress(username, route);
     }
 
+    public synchronized String uploadCheckInPhoto(String username, MultipartFile file) {
+        if (file.isEmpty()) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_ERROR",
+                "Check-in photo file is required."
+            );
+        }
+
+        if (file.getSize() > CHECK_IN_PHOTO_MAX_BYTES) {
+            throw new ApiException(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "PHOTO_TOO_LARGE",
+                "Check-in photo must be 5 MB or smaller."
+            );
+        }
+
+        String extension = resolveImageExtension(file.getOriginalFilename());
+        if (extension == null || !ALLOWED_PHOTO_EXTENSIONS.contains(extension)) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_PHOTO_TYPE",
+                "Supported photo types: jpg, jpeg, png, webp."
+            );
+        }
+
+        String photoId = UUID.randomUUID().toString().replace("-", "");
+        Path userDirectory = checkInPhotoStorageRoot.resolve(username).normalize();
+        Path targetPath = userDirectory.resolve(photoId + "." + extension).normalize();
+
+        if (!targetPath.startsWith(userDirectory)) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_PHOTO_PATH",
+                "Invalid check-in photo target path."
+            );
+        }
+
+        try {
+            Files.createDirectories(userDirectory);
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException exception) {
+            throw new ApiException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "PHOTO_STORE_FAILED",
+                "Failed to store check-in photo."
+            );
+        }
+
+        checkInPhotosById.put(photoId, new StoredCheckInPhoto(username, targetPath));
+        return PHOTO_URL_PREFIX + photoId;
+    }
+
+    public synchronized Resource loadCheckInPhoto(String username, String photoId) {
+        StoredCheckInPhoto storedPhoto = findOwnedPhoto(username, photoId);
+        if (!Files.exists(storedPhoto.path())) {
+            throw notFound("Check-in photo not found: " + photoId);
+        }
+        return new FileSystemResource(storedPhoto.path());
+    }
+
     public synchronized CheckInResultResponse createCheckIn(
         String username,
         CreateCheckInRequest request
@@ -164,12 +248,18 @@ public class NwTrailsService {
             );
         }
 
+        List<String> normalizedPhotoUrls = normalizePhotoUrls(request.photoUrls());
+        for (String normalizedPhotoUrl : normalizedPhotoUrls) {
+            ensurePhotoBelongsToUser(username, normalizedPhotoUrl);
+        }
+
         CheckInRecord record = new CheckInRecord(
             "c" + checkInIdSequence.getAndIncrement(),
             username,
             request.landmarkId(),
             Instant.now(),
-            normalizeNote(request.note())
+            normalizeNote(request.note()),
+            normalizedPhotoUrls
         );
         userRecords.add(record);
         userRecords.sort(Comparator.comparing(CheckInRecord::checkedInAt).reversed());
@@ -386,6 +476,103 @@ public class NwTrailsService {
         }
     }
 
+    private void initializeCheckInPhotoStorage() {
+        try {
+            Files.createDirectories(checkInPhotoStorageRoot);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to initialize check-in photo storage.", exception);
+        }
+    }
+
+    private String resolveImageExtension(String originalFilename) {
+        if (originalFilename == null || originalFilename.isBlank()) {
+            return null;
+        }
+        int lastDotIndex = originalFilename.lastIndexOf('.');
+        if (lastDotIndex < 0 || lastDotIndex == originalFilename.length() - 1) {
+            return null;
+        }
+        return originalFilename.substring(lastDotIndex + 1).toLowerCase();
+    }
+
+    private String normalizePhotoUrl(String photoUrl) {
+        if (photoUrl == null) {
+            return null;
+        }
+        String value = photoUrl.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        if (value.startsWith("/api/v1" + PHOTO_URL_PREFIX)) {
+            return value.substring("/api/v1".length());
+        }
+        if (value.startsWith(PHOTO_URL_PREFIX)) {
+            return value;
+        }
+        throw new ApiException(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_PHOTO_URL",
+            "Check-in photo URL is invalid."
+        );
+    }
+
+    private List<String> normalizePhotoUrls(List<String> photoUrls) {
+        if (photoUrls == null || photoUrls.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> normalized = new ArrayList<>();
+        for (String photoUrl : photoUrls) {
+            String value = normalizePhotoUrl(photoUrl);
+            if (value != null) {
+                normalized.add(value);
+            }
+        }
+
+        List<String> deduplicated = new ArrayList<>(new LinkedHashSet<>(normalized));
+        if (deduplicated.size() > CHECK_IN_MAX_PHOTOS) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "TOO_MANY_PHOTOS",
+                "You can attach up to " + CHECK_IN_MAX_PHOTOS + " photos per check-in."
+            );
+        }
+
+        return List.copyOf(deduplicated);
+    }
+
+    private String extractPhotoId(String normalizedPhotoUrl) {
+        if (!normalizedPhotoUrl.startsWith(PHOTO_URL_PREFIX)) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_PHOTO_URL",
+                "Check-in photo URL is invalid."
+            );
+        }
+        String photoId = normalizedPhotoUrl.substring(PHOTO_URL_PREFIX.length()).trim();
+        if (photoId.isEmpty()) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_PHOTO_URL",
+                "Check-in photo URL is invalid."
+            );
+        }
+        return photoId;
+    }
+
+    private void ensurePhotoBelongsToUser(String username, String normalizedPhotoUrl) {
+        String photoId = extractPhotoId(normalizedPhotoUrl);
+        findOwnedPhoto(username, photoId);
+    }
+
+    private StoredCheckInPhoto findOwnedPhoto(String username, String photoId) {
+        StoredCheckInPhoto photo = checkInPhotosById.get(photoId);
+        if (photo == null || !photo.ownerUsername().equals(username)) {
+            throw notFound("Check-in photo not found: " + photoId);
+        }
+        return photo;
+    }
+
     private String normalizeNote(String note) {
         if (note == null) {
             return null;
@@ -498,4 +685,6 @@ public class NwTrailsService {
     }
 
     private record RouteProgressAfterCheckIn(String messageSuffix, RouteProgressResponse routeProgress) {}
+
+    private record StoredCheckInPhoto(String ownerUsername, Path path) {}
 }
