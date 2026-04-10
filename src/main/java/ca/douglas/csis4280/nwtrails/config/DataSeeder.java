@@ -2,8 +2,10 @@ package ca.douglas.csis4280.nwtrails.config;
 
 import ca.douglas.csis4280.nwtrails.domain.Landmark;
 import ca.douglas.csis4280.nwtrails.domain.LandmarkCategory;
+import ca.douglas.csis4280.nwtrails.domain.RoutePlan;
 import ca.douglas.csis4280.nwtrails.domain.UserAccount;
 import ca.douglas.csis4280.nwtrails.repository.LandmarkRepository;
+import ca.douglas.csis4280.nwtrails.repository.RouteRepository;
 import ca.douglas.csis4280.nwtrails.repository.UserAccountRepository;
 import java.util.List;
 import org.springframework.boot.CommandLineRunner;
@@ -14,15 +16,18 @@ import org.springframework.stereotype.Component;
 public class DataSeeder implements CommandLineRunner {
 
     private final LandmarkRepository landmarkRepository;
+    private final RouteRepository routeRepository;
     private final UserAccountRepository userAccountRepository;
     private final PasswordEncoder passwordEncoder;
 
     public DataSeeder(
         LandmarkRepository landmarkRepository,
+        RouteRepository routeRepository,
         UserAccountRepository userAccountRepository,
         PasswordEncoder passwordEncoder
     ) {
         this.landmarkRepository = landmarkRepository;
+        this.routeRepository = routeRepository;
         this.userAccountRepository = userAccountRepository;
         this.passwordEncoder = passwordEncoder;
     }
@@ -31,6 +36,10 @@ public class DataSeeder implements CommandLineRunner {
     public void run(String... args) {
         if (landmarkRepository.count() == 0) {
             landmarkRepository.saveAll(seedLandmarks());
+        }
+
+        if (routeRepository.count() == 0) {
+            routeRepository.saveAll(seedRoutes());
         }
 
         if (userAccountRepository.count() == 0) {
@@ -56,6 +65,22 @@ public class DataSeeder implements CommandLineRunner {
                 List.of("USER", "ADMIN"),
                 true
             )
+        );
+    }
+
+    private List<RoutePlan> seedRoutes() {
+        return List.of(
+            new RoutePlan("r1", "Historic Downtown Walk", 2.5, 45, "Easy",
+                List.of("l1", "l2", "l3", "l4", "l12")),
+            new RoutePlan("r2", "Waterfront Trail", 3.8, 70, "Medium",
+                List.of("l4", "l6", "l9", "l11", "l15", "l12")),
+            new RoutePlan("r3", "Food and Market Tour", 1.8, 30, "Easy",
+                List.of("l9", "l10", "l11", "l14")),
+            new RoutePlan("r4", "Queens Park and Beyond", 3.2, 55, "Medium",
+                List.of("l5", "l7", "l8", "l13")),
+            new RoutePlan("r5", "Complete New West", 6.5, 120, "Hard",
+                List.of("l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8",
+                        "l9", "l10", "l11", "l12", "l13", "l14", "l15"))
         );
     }
 
