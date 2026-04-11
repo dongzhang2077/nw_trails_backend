@@ -25,7 +25,6 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import ca.douglas.csis4280.nwtrails.repository.LandmarkRepository;
+import ca.douglas.csis4280.nwtrails.repository.RouteRepository;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
@@ -47,6 +47,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class NwTrailsService {
 
     private final LandmarkRepository landmarkRepository;
+    private final RouteRepository routeRepository;
 
     private static final int CHECK_IN_MAX_DISTANCE_METERS = 50;
     private static final int CHECK_IN_MAX_PHOTOS = 9;
@@ -59,58 +60,46 @@ public class NwTrailsService {
     );
     private static final String PHOTO_URL_PREFIX = "/checkins/photos/";
 
-    private final Map<String, RoutePlan> routes = new LinkedHashMap<>();
-
     private final Map<String, List<CheckInRecord>> checkInsByUser = new ConcurrentHashMap<>();
     private final Map<String, String> activeRouteIdByUser = new ConcurrentHashMap<>();
     private final Map<String, StoredCheckInPhoto> checkInPhotosById = new ConcurrentHashMap<>();
     private final Path checkInPhotoStorageRoot = Path.of("storage", "checkin-photos");
 
     private final AtomicLong checkInIdSequence = new AtomicLong(1);
-    private final AtomicLong routeIdSequence = new AtomicLong(100);
 
-    public NwTrailsService(LandmarkRepository landmarkRepository) {
+    public NwTrailsService(LandmarkRepository landmarkRepository, RouteRepository routeRepository) {
         this.landmarkRepository = landmarkRepository;
+        this.routeRepository = routeRepository;
         initializeCheckInPhotoStorage();
-        seedRoutes();
     }
 
-    public synchronized List<RoutePlan> listRoutes(@Nullable String difficulty) {
+    public List<RoutePlan> listRoutes(@Nullable String difficulty) {
         if (difficulty == null || difficulty.isBlank()) {
-            return List.copyOf(routes.values());
+            return routeRepository.findAll();
         }
-        return routes
-            .values()
-            .stream()
-            .filter(route -> route.difficulty().equalsIgnoreCase(difficulty.trim()))
-            .toList();
+        return routeRepository.findByDifficultyIgnoreCase(difficulty.trim());
     }
 
-    public synchronized RoutePlan getRouteById(String routeId) {
-        RoutePlan route = routes.get(routeId);
-        if (route == null) {
-            throw notFound("Route not found: " + routeId);
-        }
-        return route;
+    public RoutePlan getRouteById(String routeId) {
+        return routeRepository.findById(routeId)
+            .orElseThrow(() -> notFound("Route not found: " + routeId));
     }
 
-    public synchronized RoutePlan createRoute(CreateRouteRequest request) {
+    public RoutePlan createRoute(CreateRouteRequest request) {
         validateRouteLandmarkIds(request.landmarkIds());
-        String id = "r" + routeIdSequence.getAndIncrement();
         RoutePlan route = new RoutePlan(
-            id,
+            null,
             request.name(),
             request.distanceKm(),
             request.durationMinutes(),
             request.difficulty(),
             List.copyOf(request.landmarkIds())
         );
-        routes.put(id, route);
-        return route;
+        return routeRepository.save(route);
     }
 
-    public synchronized RoutePlan updateRoute(String routeId, UpdateRouteRequest request) {
-        if (!routes.containsKey(routeId)) {
+    public RoutePlan updateRoute(String routeId, UpdateRouteRequest request) {
+        if (!routeRepository.existsById(routeId)) {
             throw notFound("Route not found: " + routeId);
         }
         validateRouteLandmarkIds(request.landmarkIds());
@@ -123,15 +112,14 @@ public class NwTrailsService {
             request.difficulty(),
             List.copyOf(request.landmarkIds())
         );
-        routes.put(routeId, updated);
-        return updated;
+        return routeRepository.save(updated);
     }
 
-    public synchronized void deleteRoute(String routeId) {
-        RoutePlan removed = routes.remove(routeId);
-        if (removed == null) {
+    public void deleteRoute(String routeId) {
+        if (!routeRepository.existsById(routeId)) {
             throw notFound("Route not found: " + routeId);
         }
+        routeRepository.deleteById(routeId);
     }
 
     public synchronized RouteProgressResponse startRoute(String username, String routeId) {
@@ -334,9 +322,9 @@ public class NwTrailsService {
         RouteProgressResponse activeRoute = null;
         String activeRouteId = activeRouteIdByUser.get(username);
         if (activeRouteId != null) {
-            RoutePlan route = routes.get(activeRouteId);
-            if (route != null) {
-                activeRoute = computeRouteProgress(username, route);
+            RoutePlan activeRoutePlan = routeRepository.findById(activeRouteId).orElse(null);
+            if (activeRoutePlan != null) {
+                activeRoute = computeRouteProgress(username, activeRoutePlan);
             }
         }
 
@@ -392,7 +380,7 @@ public class NwTrailsService {
             return new RouteProgressAfterCheckIn("", null);
         }
 
-        RoutePlan route = routes.get(activeRouteId);
+        RoutePlan route = routeRepository.findById(activeRouteId).orElse(null);
         if (route == null) {
             activeRouteIdByUser.remove(username);
             return new RouteProgressAfterCheckIn("", null);
@@ -609,80 +597,6 @@ public class NwTrailsService {
         return (int) Math.round(earthRadiusMeters * c);
     }
 
-
-    private void seedRoutes() {
-        routes.put(
-            "r1",
-            new RoutePlan(
-                "r1",
-                "Historic Downtown Walk",
-                2.5,
-                45,
-                "Easy",
-                List.of("l1", "l2", "l3", "l4", "l12")
-            )
-        );
-        routes.put(
-            "r2",
-            new RoutePlan(
-                "r2",
-                "Waterfront Trail",
-                3.8,
-                70,
-                "Medium",
-                List.of("l4", "l6", "l9", "l11", "l15", "l12")
-            )
-        );
-        routes.put(
-            "r3",
-            new RoutePlan(
-                "r3",
-                "Food and Market Tour",
-                1.8,
-                30,
-                "Easy",
-                List.of("l9", "l10", "l11", "l14")
-            )
-        );
-        routes.put(
-            "r4",
-            new RoutePlan(
-                "r4",
-                "Queens Park and Beyond",
-                3.2,
-                55,
-                "Medium",
-                List.of("l5", "l7", "l8", "l13")
-            )
-        );
-        routes.put(
-            "r5",
-            new RoutePlan(
-                "r5",
-                "Complete New West",
-                6.5,
-                120,
-                "Hard",
-                List.of(
-                    "l1",
-                    "l2",
-                    "l3",
-                    "l4",
-                    "l5",
-                    "l6",
-                    "l7",
-                    "l8",
-                    "l9",
-                    "l10",
-                    "l11",
-                    "l12",
-                    "l13",
-                    "l14",
-                    "l15"
-                )
-            )
-        );
-    }
 
     private record RouteProgressAfterCheckIn(String messageSuffix, RouteProgressResponse routeProgress) {}
 
